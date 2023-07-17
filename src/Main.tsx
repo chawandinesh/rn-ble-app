@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import {
   NativeEventEmitter,
   StyleSheet,
@@ -18,6 +19,8 @@ import BleManagerTx from 'react-native-ble-manager';
 import Toast from 'react-native-simple-toast';
 import {StateContext} from './StateContext';
 import base64 from 'base-64';
+import AsyncStore from '@react-native-async-storage/async-storage';
+import {useIsFocused} from '@react-navigation/native';
 
 let BlePlxManager = new BleManager();
 const eventEmitter = new NativeEventEmitter();
@@ -32,9 +35,15 @@ const characteristicUUIDNotify = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
 const Main = () => {
   const state = useContext<any>(StateContext);
+  const isFocused = useIsFocused();
   const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState('');
+  const [autoConnectionDeviceDetails, setAutoConnectionDeviceDetails] =
+    useState<any>({
+      deviceName: '',
+      deviceId: '',
+    });
 
   const writeCommand = () => {
     BlePlxManager.writeCharacteristicWithResponseForDevice(
@@ -55,8 +64,10 @@ const Main = () => {
   const onClickOnDevice = (device: any) => {
     if (device) {
       BlePlxManager.connectToDevice(device.id)
-        .then(res => {
+        .then(async res => {
           state.setConnectedDevice(device);
+          await AsyncStore.setItem('deviceName', device.name);
+          await AsyncStore.setItem('deviceId', device.id);
           return res.discoverAllServicesAndCharacteristics();
         })
         .then(response => {
@@ -164,21 +175,33 @@ const Main = () => {
   const bluetoothScanPermissionSuccess = () => {
     setLoading(true);
     setDevices([]);
-    BlePlxManager.startDeviceScan(null, null, (error, device) => {
-      console.log(error, device);
+    BlePlxManager.startDeviceScan(null, null, async (error, device) => {
       if (error) {
         setLoading(false);
         // Handle error (scanning will be stopped automatically)
         return;
       }
-      if (device?.localName || device?.name) {
-        devicesList.set(device?.id, device);
+      const deviceName = await AsyncStore.getItem('deviceName');
+      const deviceId = await AsyncStore.getItem('deviceId');
+      if (deviceId && deviceName) {
+        setLoading(false);
+        BlePlxManager.stopDeviceScan();
+        onClickOnDevice({name: deviceName, id: deviceId});
+      } else {
+        if (device?.localName || device?.name) {
+          devicesList.set(device?.id, device);
+        }
       }
     });
     setTimeout(() => {
-      setLoading(false);
-      setDevices(Array.from(devicesList.values()));
-      BlePlxManager.stopDeviceScan();
+      if (
+        !autoConnectionDeviceDetails.deviceId &&
+        !autoConnectionDeviceDetails.deviceName
+      ) {
+        setLoading(false);
+        setDevices(Array.from(devicesList.values()));
+        BlePlxManager.stopDeviceScan();
+      }
     }, 5000);
   };
 
@@ -314,8 +337,17 @@ const Main = () => {
   };
 
   useEffect(() => {
-    const subscription = BlePlxManager.onStateChange((state: any) => {
+    const subscription = BlePlxManager.onStateChange(async (state: any) => {
       if (state === 'PoweredOn') {
+        const deviceName = await AsyncStore.getItem('deviceName');
+        const deviceId = await AsyncStore.getItem('deviceId');
+        if (deviceName && deviceId) {
+          onScan();
+          setAutoConnectionDeviceDetails({
+            deviceName: deviceName,
+            deviceId: deviceId,
+          });
+        }
       }
     }, true);
     const subscriptionA = eventEmitter.addListener('eventname', () => {});
