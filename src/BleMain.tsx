@@ -20,7 +20,6 @@ import Toast from 'react-native-simple-toast';
 import {StateContext} from './StateContext';
 import base64 from 'base-64';
 import AsyncStore from '@react-native-async-storage/async-storage';
-import {useIsFocused} from '@react-navigation/native';
 
 let BlePlxManager = new BleManager();
 const eventEmitter = new NativeEventEmitter();
@@ -35,7 +34,6 @@ const characteristicUUIDNotify = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
 const Main = () => {
   const state = useContext<any>(StateContext);
-  const isFocused = useIsFocused();
   const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState('');
@@ -91,91 +89,103 @@ const Main = () => {
     }
   };
 
-  const enableBlueooth = () => {
-    check(PERMISSIONS.ANDROID.BLUETOOTH_CONNECT).then(async res => {
-      console.log(res);
-      switch (res) {
-        case 'blocked':
-          Alert.alert(
-            'Bluetooth permission',
-            'Bluetooth enable permission is blocked in the device ' +
-              'settings. Allow the app to turn on blueooth to ' +
-              'connect.',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  Linking.sendIntent('android.settings.BLUETOOTH_SETTINGS');
-                },
-              },
-            ],
-          );
-          break;
-        case 'denied':
-          request(PERMISSIONS.ANDROID.BLUETOOTH_CONNECT).then(async result => {
-            switch (result) {
-              case 'blocked':
-                Alert.alert(
-                  'Bluetooth permission',
-                  'Bluetooth enable permission is blocked in the device ' +
-                    'settings. Allow the app to turn on blueooth to ' +
-                    'connect.',
-                  [
-                    {
-                      text: 'OK',
-                      onPress: () => {
-                        Linking.sendIntent(
-                          'android.settings.BLUETOOTH_SETTINGS',
-                        );
-                      },
-                    },
-                  ],
-                );
-                break;
-              case 'denied':
-                showToast('blueooth connect permission request denied');
-                break;
-              case 'granted':
-                await BleManagerTx.enableBluetooth()
-                  .then(() => {
-                    locationPermission();
-                  })
-                  .catch(err => {
-                    console.log('fail T', err);
-                  });
-                break;
-              case 'limited':
-                showToast('blueooth connect permission request limited');
-                break;
-              case 'unavailable':
-                showToast('blueooth connect permission request unavailable');
-                break;
-            }
-          });
-          break;
-        case 'granted':
-          await BleManagerTx.enableBluetooth()
-            .then(() => {
-              locationPermission();
-            })
-            .catch(() => {
-              showToast('Failed to enable blueooth');
-            });
-          break;
-        case 'limited':
-          showToast('blueooth connect permission request limited');
-          break;
-        case 'unavailable':
-          showToast('blueooth connect permission request unavailable');
-          break;
-      }
-    });
+  const enableBlueooth = async () => {
+    const res = await BlePlxManager.state();
+    if (res === 'PoweredOn') {
+      locationPermission();
+    } else {
+      await BleManagerTx.enableBluetooth()
+        .then(() => {
+          locationPermission();
+        })
+        .catch(err => {
+          console.log('fail T', err);
+        });
+    }
+    // switch (res) {
+    //   case 'PoweredOff':
+    //     Alert.alert(
+    //       'Bluetooth permission',
+    //       'Bluetooth enable permission is blocked in the device ' +
+    //         'settings. Allow the app to turn on blueooth to ' +
+    //         'connect.',
+    //       [
+    //         {
+    //           text: 'OK',
+    //           onPress: () => {
+    //             Linking.sendIntent('android.settings.BLUETOOTH_SETTINGS');
+    //           },
+    //         },
+    //       ],
+    //     );
+    //     break;
+    //   case 'PoweredOn':
+    //     request(PERMISSIONS.ANDROID.BLUETOOTH_SCAN).then(async result => {
+    //       switch (result) {
+    //         case 'blocked':
+    //           Alert.alert(
+    //             'Bluetooth permission',
+    //             'Bluetooth enable permission is blocked in the device ' +
+    //               'settings. Allow the app to turn on blueooth to ' +
+    //               'connect.',
+    //             [
+    //               {
+    //                 text: 'OK',
+    //                 onPress: () => {
+    //                   Linking.sendIntent(
+    //                     'android.settings.BLUETOOTH_SETTINGS',
+    //                   );
+    //                 },
+    //               },
+    //             ],
+    //           );
+    //           break;
+    //         case 'denied':
+    //           showToast('blueooth connect permission request denied');
+    //           break;
+    //         case 'granted':
+    //           await BleManagerTx.enableBluetooth()
+    //             .then(() => {
+    //               locationPermission();
+    //             })
+    //             .catch(err => {
+    //               console.log('fail T', err);
+    //             });
+    //           break;
+    //         case 'limited':
+    //           showToast('blueooth connect permission request limited');
+    //           break;
+    //         case 'unavailable':
+    //           showToast('blueooth connect permission request unavailable');
+    //           break;
+    //       }
+    //     });
+    //     break;
+    //   case 'granted':
+    //     await BleManagerTx.enableBluetooth()
+    //       .then(() => {
+    //         locationPermission();
+    //       })
+    //       .catch(() => {
+    //         showToast('Failed to enable blueooth');
+    //       });
+    //     break;
+    //   case 'limited':
+    //     showToast('blueooth connect permission request limited');
+    //     break;
+    //   case 'unavailable':
+    //     showToast('blueooth connect permission request unavailable');
+    //     break;
+    // }
   };
 
-  const bluetoothScanPermissionSuccess = () => {
+  const bluetoothScanPermissionSuccess = async () => {
     setLoading(true);
     setDevices([]);
+    await BlePlxManager.enable();
+    console.log('ttt.....');
     BlePlxManager.startDeviceScan(null, null, async (error, device) => {
+      console.log(error, 'ERRRR');
       if (error) {
         setLoading(false);
         // Handle error (scanning will be stopped automatically)
@@ -206,7 +216,10 @@ const Main = () => {
   };
 
   const bluetoothScanPermission = () => {
+    bluetoothScanPermissionSuccess();
+
     check(PERMISSIONS.ANDROID.BLUETOOTH_SCAN).then(res => {
+      console.log(res, 'res...');
       switch (res) {
         case 'blocked':
           Alert.alert(
@@ -271,7 +284,9 @@ const Main = () => {
   };
 
   const locationPermission = () => {
+    console.log('location');
     check(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION).then(response => {
+      console.log(response);
       switch (response) {
         case 'blocked':
           Alert.alert(
@@ -358,8 +373,118 @@ const Main = () => {
   }, []);
 
   const onScan = async () => {
+    setDevices([]);
+    setLoading(true);
     // check blueooth permission
-    enableBlueooth();
+    // enableBlueooth();
+    // BlePlxManager.enable();
+    const bluetoothState = await BlePlxManager.state();
+    check(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION)
+      .then(res => {
+        console.log(res, 'RESSS');
+      })
+      .catch((err: any) => {
+        request(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION)
+          .then(res => {
+            console.log(res, 'REEE');
+          })
+          .catch(err => {
+            console.log(err, 'ERR');
+          });
+      });
+    console.log(bluetoothState);
+    if (bluetoothState === 'PoweredOff') {
+      await BlePlxManager.enable();
+      onScan();
+    } else {
+      BlePlxManager.startDeviceScan(
+        null,
+        null,
+        async (error: any, device: any) => {
+          console.log(error, error?.message, device, 'ERRRR');
+
+          if (error) {
+            // this is for android > 12
+            // bluetoothScanPermission();
+            // check(PERMISSIONS.ANDROID.BLUETOOTH_SCAN)
+            //   .then(res => {
+            //     console.log(res, 'rrr');
+            //     if(res === "denied"){
+
+            //     }
+            //     request(PERMISSIONS.ANDROID.BLUETOOTH_SCAN)
+            //       .then(res => {
+            //         console.log(res, 'res');
+            //       })
+            //       .catch(err => {
+            //         console.log(err);
+            //       });
+            //   })
+            //   .catch(err => {
+            //     console.log(err, 'eee');
+            //   });
+            //... for android > 12
+            if (error.message === 'Location services are disabled') {
+              Alert.alert(
+                'Location Disabled',
+                'Please enable location to ' +
+                  'start scanning the ' +
+                  'ble devices.',
+                [
+                  {
+                    text: 'OK',
+                    onPress: () => {
+                      // Linking.sendIntent('android.location.LocationManager');
+                      Linking.sendIntent(
+                        'android.settings.LOCATION_SOURCE_SETTINGS',
+                      );
+                    },
+                  },
+                ],
+              );
+            } else if (
+              error.message === 'Device is not authorized to use BluetoothLE'
+            ) {
+              request(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION)
+                .then(res => {
+                  console.log(res, 'RES');
+                  if (res === 'granted') {
+                    onScan();
+                  }
+                })
+                .catch(err => {
+                  console.log(err, 'ERR');
+                });
+            }
+            setLoading(false);
+            // Handle error (scanning will be stopped automatically)
+            return;
+          }
+          const deviceName = await AsyncStore.getItem('deviceName');
+          const deviceId = await AsyncStore.getItem('deviceId');
+          if (deviceId && deviceName) {
+            setLoading(false);
+            BlePlxManager.stopDeviceScan();
+            onClickOnDevice({name: deviceName, id: deviceId});
+          } else {
+            if (device?.localName || device?.name) {
+              devicesList.set(device?.id, device);
+            }
+          }
+        },
+      );
+    }
+
+    setTimeout(() => {
+      if (
+        !autoConnectionDeviceDetails.deviceId &&
+        !autoConnectionDeviceDetails.deviceName
+      ) {
+        setLoading(false);
+        setDevices(Array.from(devicesList.values()));
+        BlePlxManager.stopDeviceScan();
+      }
+    }, 5000);
   };
 
   const renderDevice = ({item}: any) => {
@@ -377,7 +502,7 @@ const Main = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.androidText}>Android above 12</Text>
+      <Text style={styles.androidText}>Android below 12</Text>
       <View style={styles.top}>
         {state.connectedDevice ? (
           <Text style={styles.connectedDeviceText}>
